@@ -3,7 +3,6 @@ import psutil
 import socket
 import smtplib
 import wmi
-import GPUtil
 import winreg
 from email.message import EmailMessage
 
@@ -30,6 +29,24 @@ def get_drive_info():
         info.append(f"{model} | {interface_type} | {media_type} | {size} GB")
     return info
 
+# ✅ New GPU info using WMI (discrete vs integrated)
+def get_gpu_info():
+    c = wmi.WMI()
+    gpus = c.Win32_VideoController()
+    gpu_info = []
+    for gpu in gpus:
+        name = gpu.Name.strip()
+        vendor = gpu.AdapterCompatibility.strip() if gpu.AdapterCompatibility else "Unknown"
+        vram = int(gpu.AdapterRAM) / (1024 ** 2) if gpu.AdapterRAM else 0
+        is_discrete = vram > 512  # Simple threshold to separate discrete vs integrated
+        gpu_info.append({
+            "Name": name,
+            "Vendor": vendor,
+            "VRAM_MB": round(vram),
+            "Type": "Discrete" if is_discrete else "Integrated"
+        })
+    return gpu_info
+
 # 🔍 Main system info collector
 def get_system_info():
     c = wmi.WMI()
@@ -53,14 +70,16 @@ def get_system_info():
     # RAM
     info["RAM"] = f"{round(psutil.virtual_memory().total / (1024**3), 2)} GB"
 
-    # GPU
-    gpus = GPUtil.getGPUs()
+    # GPU Info
+    gpus = get_gpu_info()
     if gpus:
         for idx, gpu in enumerate(gpus):
-            info[f"GPU {idx + 1} Name"] = gpu.name
-            info[f"GPU {idx + 1} VRAM"] = f"{round(gpu.memoryTotal)} MB"
+            label = f"GPU {idx + 1} ({gpu['Type']})"
+            info[f"{label} Name"] = gpu["Name"]
+            info[f"{label} Vendor"] = gpu["Vendor"]
+            info[f"{label} VRAM"] = f"{gpu['VRAM_MB']} MB"
     else:
-        info["GPU"] = "No discrete GPU detected"
+        info["GPU"] = "No GPU detected"
 
     # BIOS + Motherboard
     try:
